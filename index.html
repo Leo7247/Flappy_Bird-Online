@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flappy Bird - 聲控版 (micro:bit) + 虛擬美元 & 樣式商店</title>
+    <title>Flappy Bird - 聲控版 (micro:bit)</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background: linear-gradient(to bottom, #87CEEB 0%, #98D8E8 70%, #F0F8FF 100%); overflow: hidden; font-family: Arial, sans-serif; }
@@ -109,13 +109,12 @@ let data = { dollars: 0, highestLevel: 1, currentStyle: 0, unlockedStyles: [0], 
 function loadData() { if (localStorage.gameData) data = JSON.parse(localStorage.gameData); }
 function saveData() { localStorage.gameData = JSON.stringify(data); }
 
-// ==================== 鳥兒樣式 (新增 3 款) ====================
+// ==================== 鳥兒樣式 (已新增 3 款) ====================
 const birdStyles = [
     { name: "經典橙鳥", body: "#FF9500", wing: "#FF6600", beak: "#FFCC33", cost: 0 },
     { name: "藍傑伊", body: "#4488FF", wing: "#2266CC", beak: "#FFFF66", cost: 80 },
     { name: "紅雀", body: "#FF4444", wing: "#CC0000", beak: "#FFAA00", cost: 160 },
     { name: "金鳳凰", body: "#FFD700", wing: "#FFAA00", beak: "#FFFF00", cost: 400, glow: true },
-
     // === 新增 3 款皮膚 ===
     { name: "綠鸚鵡", body: "#00CC66", wing: "#009944", beak: "#FFDD44", cost: 250 },
     { name: "紫貓頭鷹", body: "#BB66FF", wing: "#8844CC", beak: "#FFBB22", cost: 350 },
@@ -144,10 +143,185 @@ function playDie() {
     osc.start(); osc.stop(audioCtx.currentTime + 0.7);
 }
 
-// ==================== 遊戲核心 (不變) ====================
-// ... (所有遊戲核心、粒子、雲朵、鳥兒繪製、micro:bit 等程式碼保持完全相同) ...
+// ==================== 遊戲核心 ====================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+resizeCanvas(); window.addEventListener('resize', resizeCanvas);
 
-// ==================== 更新介面 (自動支援新皮膚) ====================
+let particles = [];
+let clouds = [{x:100,y:120,s:0.4,size:1.1},{x:400,y:180,s:0.3,size:0.8},{x:700,y:90,s:0.5,size:1.0}];
+
+function createParticles(x, y, count=10) {
+    if (!data.animationsOn) return;
+    for (let i=0; i<count; i++) particles.push({x, y, vx:Math.random()*4-2, vy:Math.random()*2-3, life:40+Math.random()*20, color:`hsl(${Math.random()*60+10},90%,60%)`});
+}
+function updateParticles() { if (!data.animationsOn) return; for (let i=particles.length-1;i>=0;i--) { let p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.08; p.life--; if (p.life<=0) particles.splice(i,1); }}
+function drawParticles() {
+    if (!data.animationsOn) return;
+    for (let p of particles) { let a = p.life/60; ctx.globalAlpha = a*0.9; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, a*5+1, 0, Math.PI*2); ctx.fill(); }
+    ctx.globalAlpha = 1;
+}
+function drawClouds() {
+    if (!data.animationsOn) return;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let c of clouds) { let x = c.x % (canvas.width + 400) - 200; ctx.beginPath(); ctx.arc(x, c.y, 60*c.size, 0, Math.PI*2); ctx.arc(x+40, c.y-20, 45*c.size, 0, Math.PI*2); ctx.arc(x+80, c.y, 55*c.size, 0, Math.PI*2); ctx.fill(); c.x += c.speed; }
+}
+
+// 遊戲變數
+let gameStarted = false, gameOver = false, gameActive = false, gamePaused = false;
+let bird = { x: 140, y: 0, width: 42, height: 32, velocity: 0, gravity: 0.58, jumpPower: -11.2, rotation: 0, flapFrame: 0 };
+let pipes = [], score = 0, frameCount = 0, lastEarned = 0;
+let pipeWidth = 78, basePipeSpeed = 3.8, pipeGap = 220, jumpThreshold = 140;
+
+function initBird() { bird.y = canvas.height / 2 - bird.height / 2; bird.velocity = 0; bird.rotation = 0; bird.flapFrame = 0; }
+initBird();
+
+function resetGame(startNow = false) {
+    initBird(); pipes = []; particles = []; score = 0; frameCount = 0; gameOver = false; gameActive = startNow; gamePaused = false;
+    if (startNow) createPipe();
+}
+
+function createPipe() {
+    const currentLevel = 1 + Math.floor(score / 3);
+    let effectiveGap = pipeGap - (currentLevel - 1) * 12; effectiveGap = Math.max(140, effectiveGap);
+    const minH = 70, maxH = canvas.height - effectiveGap - 70;
+    const topH = Math.random() * (maxH - minH) + minH;
+    pipes.push({ x: canvas.width + 50, topHeight: topH, bottomY: topH + effectiveGap, passed: false });
+}
+
+function checkCollision() {
+    if (bird.y < -20 || bird.y + bird.height > canvas.height + 20) return true;
+    for (let p of pipes) {
+        if (bird.x + bird.width*0.8 > p.x && bird.x < p.x + pipeWidth) {
+            if (bird.y + 8 < p.topHeight || bird.y + bird.height - 8 > p.bottomY) return true;
+        }
+    }
+    return false;
+}
+
+function update() {
+    if (!gameActive || gameOver || gamePaused) return;
+
+    const currentLevel = 1 + Math.floor(score / 3);
+    const pipeSpeed = basePipeSpeed + (currentLevel - 1) * 0.5;
+
+    bird.velocity += bird.gravity; bird.y += bird.velocity;
+    bird.rotation = Math.min(1.2, Math.max(-0.45, bird.velocity * 0.09));
+
+    if (data.animationsOn && bird.velocity < -1) bird.flapFrame = (bird.flapFrame + 1) % 3;
+
+    frameCount++;
+    if (frameCount % 92 === 0) createPipe();
+
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        pipes[i].x -= pipeSpeed;
+        if (pipes[i].x + pipeWidth < 0) pipes.splice(i,1);
+        if (!pipes[i].passed && pipes[i].x + pipeWidth < bird.x) {
+            pipes[i].passed = true; score++; playScore();
+        }
+    }
+
+    updateParticles();
+
+    if (checkCollision()) {
+        playDie();
+        const finalLevel = 1 + Math.floor(score / 3);
+        const multiplier = Math.pow(2, finalLevel - 1);
+        lastEarned = score * multiplier;
+        data.dollars += lastEarned;
+        data.highestLevel = Math.max(data.highestLevel, finalLevel);
+        saveData();
+        updateDisplays();
+        gameOver = true; gameActive = false;
+    }
+}
+
+function drawBird() {
+    const s = birdStyles[data.currentStyle];
+    ctx.save();
+    ctx.translate(bird.x + bird.width/2, bird.y + bird.height/2);
+    ctx.rotate(bird.rotation);
+
+    if (data.animationsOn) {
+        if (s.glow) { ctx.shadowBlur = 25; ctx.shadowColor = "#FFFF99"; }
+        ctx.fillStyle = s.body; ctx.beginPath(); ctx.ellipse(0, 0, bird.width/2, bird.height/2, 0, 0, Math.PI*2); ctx.fill();
+
+        ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(12, -6, 8, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "black"; ctx.beginPath(); ctx.arc(15, -6, 4, 0, Math.PI*2); ctx.fill();
+
+        ctx.fillStyle = s.beak; ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(32, -4); ctx.lineTo(32, 4); ctx.closePath(); ctx.fill();
+
+        let wingY = bird.flapFrame === 0 ? -14 : (bird.flapFrame === 2 ? -2 : -8);
+        ctx.fillStyle = s.wing; ctx.beginPath(); ctx.ellipse(-4, wingY, 18, 10, 0.3, 0, Math.PI*2); ctx.fill();
+    } else {
+        ctx.fillStyle = s.body; ctx.fillRect(-bird.width/2, -bird.height/2, bird.width, bird.height);
+    }
+    ctx.restore(); ctx.shadowBlur = 0;
+}
+
+function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawClouds();
+
+    ctx.fillStyle = '#5BDB5B'; ctx.strokeStyle = '#3e8e41'; ctx.lineWidth = 6;
+    for (let p of pipes) {
+        ctx.fillRect(p.x, 0, pipeWidth, p.topHeight); ctx.strokeRect(p.x, 0, pipeWidth, p.topHeight);
+        ctx.fillRect(p.x, p.bottomY, pipeWidth, canvas.height - p.bottomY); ctx.strokeRect(p.x, p.bottomY, pipeWidth, canvas.height - p.bottomY);
+    }
+
+    drawBird(); drawParticles();
+
+    if (gameActive && !gameOver) {
+        const currentLevel = 1 + Math.floor(score / 3);
+        ctx.fillStyle = 'white'; ctx.strokeStyle = 'black'; ctx.lineWidth = 4;
+        ctx.font = 'bold 80px Arial'; ctx.textAlign = 'center';
+        ctx.strokeText(score, canvas.width/2, 100); ctx.fillText(score, canvas.width/2, 100);
+        ctx.font = 'bold 40px Arial'; ctx.strokeText('等級 ' + currentLevel, canvas.width/2, 160); ctx.fillText('等級 ' + currentLevel, canvas.width/2, 160);
+    }
+
+    if (!gameStarted) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = 'white'; ctx.strokeStyle = 'black'; ctx.lineWidth = 7;
+        ctx.font = 'bold 90px Arial'; ctx.textAlign = 'center';
+        ctx.strokeText('Flappy Bird', canvas.width/2, canvas.height/2 - 80); ctx.fillText('Flappy Bird', canvas.width/2, canvas.height/2 - 80);
+        ctx.font = 'bold 38px Arial'; ctx.strokeText('點擊螢幕或大聲喊叫開始', canvas.width/2, canvas.height/2 + 40); ctx.fillText('點擊螢幕或大聲喊叫開始', canvas.width/2, canvas.height/2 + 40);
+    }
+
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = 'white'; ctx.strokeStyle = 'black'; ctx.lineWidth = 6;
+        ctx.font = 'bold 110px Arial'; ctx.textAlign = 'center';
+        ctx.strokeText('遊戲結束', canvas.width/2, canvas.height/2 - 70); ctx.fillText('遊戲結束', canvas.width/2, canvas.height/2 - 70);
+
+        ctx.font = 'bold 70px Arial'; ctx.strokeText(`分數：${score}`, canvas.width/2, canvas.height/2 + 20); ctx.fillText(`分數：${score}`, canvas.width/2, canvas.height/2 + 20);
+
+        ctx.font = 'bold 50px Arial'; ctx.strokeText(`本次賺取：${lastEarned} $`, canvas.width/2, canvas.height/2 + 100); ctx.fillText(`本次賺取：${lastEarned} $`, canvas.width/2, canvas.height/2 + 100);
+
+        ctx.font = 'bold 40px Arial'; ctx.strokeText('點擊螢幕重新開始', canvas.width/2, canvas.height/2 + 180); ctx.fillText('點擊螢幕重新開始', canvas.width/2, canvas.height/2 + 180);
+    }
+
+    document.getElementById('pausedText').style.display = gamePaused ? 'block' : 'none';
+}
+
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+
+function handleInput(e) {
+    e.preventDefault();
+    if (gamePaused) { gamePaused = false; return; }
+    if (!gameStarted) { gameStarted = true; resetGame(true); }
+    else if (gameOver) { resetGame(true); }
+    else if (gameActive) {
+        bird.velocity = bird.jumpPower;
+        playFlap(); createParticles(bird.x + 10, bird.y + bird.height/2, 12);
+    }
+}
+
+document.addEventListener('keydown', e => { if (e.code === 'Space') handleInput(e); });
+canvas.addEventListener('click', handleInput);
+gameLoop();
+
+// ==================== 更新介面 ====================
 function updateDisplays() {
     document.getElementById('dollarsDisplay').textContent = data.dollars;
     document.getElementById('highestLevelDisplay').textContent = data.highestLevel;
@@ -182,9 +356,95 @@ function updateDisplays() {
     }
 }
 
-// ... (其餘 micro:bit、難度模式、設定面板、遊戲選單等程式碼保持不變) ...
+// ==================== micro:bit 藍牙 ====================
+const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_TX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
-// 初始化
+let device = null;
+const receiver = new EventTarget();
+
+async function connectBluetooth() {
+    try {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: "BBC micro:bit" }], optionalServices: [UART_SERVICE_UUID] });
+        device.addEventListener('gattserverdisconnected', () => { console.log('micro:bit 已斷線'); device = null; });
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(UART_SERVICE_UUID);
+        const txChar = await service.getCharacteristic(UART_TX_UUID);
+        await txChar.startNotifications();
+        txChar.addEventListener('characteristicvaluechanged', e => {
+            const text = new TextDecoder().decode(e.target.value).trim();
+            if (text) receiver.dispatchEvent(new CustomEvent('data', {detail: text}));
+        });
+        await service.getCharacteristic(UART_RX_UUID);
+        console.log("✅ micro:bit 藍牙已連線");
+    } catch (err) { console.error("藍牙連接失敗:", err); }
+}
+
+let prevLevel = 0;
+receiver.addEventListener('data', e => {
+    const value = parseInt(e.detail, 10);
+    if (!isNaN(value) && value >= 0 && value <= 255) {
+        document.getElementById("volumeFill").style.height = (value / 255 * 100) + "%";
+        if (value > jumpThreshold && prevLevel <= jumpThreshold) {
+            if (gameActive && !gameOver && !gamePaused) {
+                bird.velocity = bird.jumpPower;
+                playFlap(); createParticles(bird.x + 10, bird.y + bird.height/2, 14);
+            }
+        }
+        prevLevel = value;
+    }
+});
+document.getElementById("connectBluetooth").addEventListener("click", connectBluetooth);
+
+// ==================== 難度模式 ====================
+const difficultyModes = {140:'Super Hard',180:'Hard',220:'Normal',280:'Easy',320:'Super Easy'};
+document.getElementById('difficultySelect').addEventListener('change', e => {
+    pipeGap = parseInt(e.target.value);
+    document.getElementById('difficultyMode').textContent = difficultyModes[pipeGap];
+    document.getElementById('pipeGapValue').textContent = pipeGap;
+});
+document.getElementById('difficultyMode').textContent = difficultyModes[pipeGap];
+document.getElementById('pipeGapValue').textContent = pipeGap;
+
+// ==================== 小型設定按鈕 & 遊戲選單 ====================
+const controlsPanel = document.getElementById('controls');
+const toggleBtn = document.getElementById('toggleSettings');
+const menuBtn = document.getElementById('menuBtn');
+const gameMenu = document.getElementById('gameMenu');
+const pauseMenuBtn = document.getElementById('pauseMenuBtn');
+const restartMenuBtn = document.getElementById('restartMenuBtn');
+const pausedText = document.getElementById('pausedText');
+
+toggleBtn.addEventListener('click', () => controlsPanel.classList.toggle('show'));
+
+menuBtn.addEventListener('click', () => {
+    gameMenu.style.display = gameMenu.style.display === 'block' ? 'none' : 'block';
+});
+
+pauseMenuBtn.addEventListener('click', () => {
+    gamePaused = !gamePaused;
+    pausedText.style.display = gamePaused ? 'block' : 'none';
+    gameMenu.style.display = 'none';
+});
+
+restartMenuBtn.addEventListener('click', () => {
+    resetGame(true);
+    gameMenu.style.display = 'none';
+});
+
+document.addEventListener('click', e => {
+    if (!menuBtn.contains(e.target) && !gameMenu.contains(e.target)) gameMenu.style.display = 'none';
+});
+
+document.getElementById('jumpThreshold').addEventListener('input', () => {
+    jumpThreshold = parseInt(document.getElementById('jumpThreshold').value);
+    document.getElementById('jumpThresholdValue').textContent = jumpThreshold;
+});
+document.getElementById('soundToggle').addEventListener('change', e => { data.soundOn = e.target.checked; saveData(); });
+document.getElementById('animationsToggle').addEventListener('change', e => { data.animationsOn = e.target.checked; saveData(); });
+
+// ==================== 初始化 ====================
 loadData();
 updateDisplays();
 

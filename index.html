@@ -3,52 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flappy Bird - 聲控版 (micro:bit) + 虛擬美元 & 樣式商店</title>
+    <title>Flappy Bird - 聲控版 (micro:bit)</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background: linear-gradient(to bottom, #87CEEB 0%, #98D8E8 70%, #F0F8FF 100%); overflow: hidden; font-family: Arial, sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; }
 
-        /* 頂部小按鈕 */
-        #connectBluetooth, #toggleSettings, #menuBtn {
-            position: absolute; top: 10px; z-index: 30;
-            padding: 8px 12px; font-size: 16px; background: #0066cc; color: white;
-            border: none; border-radius: 6px; cursor: pointer;
+        /* Top bar - very compact */
+        #topBar {
+            position: absolute; top: 8px; left: 8px; z-index: 30; display: flex; gap: 6px;
         }
-        #connectBluetooth { left: 10px; }
-        #toggleSettings { left: 170px; font-size: 18px; padding: 8px 10px; } /* 小型設定按鈕 */
-        #menuBtn { left: 210px; font-size: 20px; padding: 6px 10px; }       /* 遊戲選單按鈕 */
+        .topBtn {
+            padding: 6px 10px; font-size: 15px; background: #0066cc; color: white;
+            border: none; border-radius: 6px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        #connectBluetooth { font-size: 15px; }
+        #toggleSettings { font-size: 18px; padding: 6px 9px; }
+        #menuBtn { font-size: 20px; padding: 4px 10px; }
 
-        #volumeBar { position: absolute; top: 10px; right: 280px; width: 28px; height: 200px; background: #ddd; border: 3px solid #555; border-radius: 8px; overflow: hidden; z-index: 20; }
+        #volumeBar { position: absolute; top: 10px; right: 280px; width: 26px; height: 190px; background: #ddd; border: 3px solid #555; border-radius: 8px; overflow: hidden; z-index: 20; }
         #volumeFill { width: 100%; height: 0%; background: linear-gradient(to top, #ff4d4d, #ffff66, #66ff66); position: absolute; bottom: 0; transition: height 0.08s linear; }
 
-        #controls { 
-            position: absolute; top: 60px; right: 10px; z-index: 20;
-            background: rgba(255,255,255,0.92); padding: 15px; border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 260px; max-height: 90vh; overflow-y: auto;
+        /* Settings panel - tiny & clean */
+        #controls {
+            position: absolute; top: 50px; right: 10px; z-index: 20;
+            background: rgba(255,255,255,0.95); padding: 12px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25); width: 240px; max-height: 85vh; overflow-y: auto;
             display: none;
         }
         #controls.show { display: block; }
-
-        #controls h3 { text-align: center; margin: 10px 0 15px; color: #0066cc; }
-        .control-item { margin: 15px 0; }
-        label { display: block; margin-bottom: 6px; font-weight: bold; }
+        #controls h3 { text-align: center; margin: 8px 0 12px; color: #0066cc; font-size: 18px; }
+        .control-item { margin: 12px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
         input[type="range"], select { width: 100%; }
-        button { padding: 8px 12px; margin-top: 6px; cursor: pointer; width: 100%; border-radius: 6px; }
+        button { padding: 7px 10px; margin-top: 5px; cursor: pointer; width: 100%; border-radius: 6px; font-size: 14px; }
 
-        /* 遊戲選單 */
+        /* Game Menu */
         #gameMenu {
-            position: absolute; top: 60px; left: 10px; z-index: 50;
-            background: white; padding: 15px; border-radius: 10px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.3); display: none; width: 180px;
+            position: absolute; top: 50px; left: 10px; z-index: 50;
+            background: white; padding: 12px; border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3); display: none; width: 170px;
         }
-        #gameMenu button { margin: 8px 0; width: 100%; }
+        #gameMenu button { margin: 6px 0; width: 100%; padding: 10px; font-size: 15px; }
 
-        /* 暫停文字 */
+        /* Paused overlay */
         .paused-text {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 110px; color: rgba(255,255,255,0.9); text-shadow: 0 0 30px black;
-            z-index: 40; pointer-events: none; display: none;
+            font-size: 100px; color: rgba(255,255,255,0.95); text-shadow: 0 0 25px black;
+            z-index: 40; pointer-events: none; display: none; font-weight: bold;
         }
     </style>
 </head>
@@ -56,13 +58,15 @@
 
 <canvas id="gameCanvas"></canvas>
 
-<button id="connectBluetooth">連線 micro:bit (藍牙)</button>
-<button id="toggleSettings">⚙️</button>
-<button id="menuBtn">≡</button>
+<div id="topBar">
+    <button id="connectBluetooth" class="topBtn">連線 micro:bit</button>
+    <button id="toggleSettings" class="topBtn">⚙️</button>
+    <button id="menuBtn" class="topBtn">≡</button>
+</div>
 
 <div id="volumeBar"><div id="volumeFill"></div></div>
 
-<!-- 設定面板 -->
+<!-- Settings Panel -->
 <div id="controls">
     <h3>虛擬美元: <span id="dollarsDisplay">0</span> $</h3>
     <h3>最高等級: <span id="highestLevelDisplay">1</span></h3>
@@ -90,13 +94,12 @@
     </div>
 </div>
 
-<!-- 遊戲選單 -->
+<!-- Game Menu -->
 <div id="gameMenu">
     <button id="pauseMenuBtn">暫停遊戲</button>
     <button id="restartMenuBtn">重新開始</button>
 </div>
 
-<!-- 暫停文字 -->
 <div class="paused-text" id="pausedText">PAUSED</div>
 
 <script>
@@ -136,7 +139,7 @@ function playDie() {
     osc.start(); osc.stop(audioCtx.currentTime + 0.7);
 }
 
-// ==================== 遊戲核心 ====================
+// ==================== 遊戲核心 (保持不變) ====================
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
@@ -400,7 +403,7 @@ document.getElementById('difficultySelect').addEventListener('change', e => {
 document.getElementById('difficultyMode').textContent = difficultyModes[pipeGap];
 document.getElementById('pipeGapValue').textContent = pipeGap;
 
-// ==================== 設定面板 & 遊戲選單 ====================
+// ==================== 小型設定按鈕 & 遊戲選單 ====================
 const controlsPanel = document.getElementById('controls');
 const toggleBtn = document.getElementById('toggleSettings');
 const menuBtn = document.getElementById('menuBtn');
@@ -426,11 +429,9 @@ restartMenuBtn.addEventListener('click', () => {
     gameMenu.style.display = 'none';
 });
 
-// 點擊畫面其他地方關閉選單
-document.addEventListener('click', (e) => {
-    if (!menuBtn.contains(e.target) && !gameMenu.contains(e.target)) {
-        gameMenu.style.display = 'none';
-    }
+// 點擊其他地方關閉選單
+document.addEventListener('click', e => {
+    if (!menuBtn.contains(e.target) && !gameMenu.contains(e.target)) gameMenu.style.display = 'none';
 });
 
 // 其他控制

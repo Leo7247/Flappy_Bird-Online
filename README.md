@@ -8,7 +8,8 @@ Fixed Some Common Bugs
 2. Fixed Some UI Bugs.
 3. Now In-Game Store Have 7 Birds
 
-(V5.5.0)[Now] Features : 
+(V5.5.0)[Lastest] Features : 
 1. Added Level Upgrade Screen.
+2. Fixed Some Common Bugs.
 
 Coming Update : 13 Feb 2026

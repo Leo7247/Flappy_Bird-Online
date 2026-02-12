@@ -8,24 +8,25 @@
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background: linear-gradient(to bottom, #87CEEB 0%, #98D8E8 70%, #F0F8FF 100%); overflow: hidden; font-family: Arial, sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; cursor: pointer; }
-        
-        #connectBluetooth, #pauseBtn, #toggleSettings {
+
+        /* 頂部小按鈕 */
+        #connectBluetooth, #toggleSettings, #menuBtn {
             position: absolute; top: 10px; z-index: 30;
-            padding: 10px 16px; font-size: 16px; background: #0066cc; color: white;
+            padding: 8px 12px; font-size: 16px; background: #0066cc; color: white;
             border: none; border-radius: 6px; cursor: pointer;
         }
         #connectBluetooth { left: 10px; }
-        #pauseBtn { left: 160px; }
-        #toggleSettings { right: 10px; font-size: 20px; padding: 8px 12px; }
+        #toggleSettings { left: 170px; font-size: 18px; padding: 8px 10px; } /* 小型設定按鈕 */
+        #menuBtn { left: 210px; font-size: 20px; padding: 6px 10px; }       /* 遊戲選單按鈕 */
 
         #volumeBar { position: absolute; top: 10px; right: 280px; width: 28px; height: 200px; background: #ddd; border: 3px solid #555; border-radius: 8px; overflow: hidden; z-index: 20; }
         #volumeFill { width: 100%; height: 0%; background: linear-gradient(to top, #ff4d4d, #ffff66, #66ff66); position: absolute; bottom: 0; transition: height 0.08s linear; }
 
         #controls { 
-            position: absolute; top: 10px; right: 10px; z-index: 20;
-            background: rgba(255,255,255,0.9); padding: 15px; border-radius: 10px;
+            position: absolute; top: 60px; right: 10px; z-index: 20;
+            background: rgba(255,255,255,0.92); padding: 15px; border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3); width: 260px; max-height: 90vh; overflow-y: auto;
-            display: none; /* 預設隱藏 */
+            display: none;
         }
         #controls.show { display: block; }
 
@@ -35,11 +36,19 @@
         input[type="range"], select { width: 100%; }
         button { padding: 8px 12px; margin-top: 6px; cursor: pointer; width: 100%; border-radius: 6px; }
 
+        /* 遊戲選單 */
+        #gameMenu {
+            position: absolute; top: 60px; left: 10px; z-index: 50;
+            background: white; padding: 15px; border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3); display: none; width: 180px;
+        }
+        #gameMenu button { margin: 8px 0; width: 100%; }
+
         /* 暫停文字 */
         .paused-text {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 120px; color: white; text-shadow: 0 0 20px black; z-index: 40;
-            display: none; pointer-events: none;
+            font-size: 110px; color: rgba(255,255,255,0.9); text-shadow: 0 0 30px black;
+            z-index: 40; pointer-events: none; display: none;
         }
     </style>
 </head>
@@ -48,11 +57,12 @@
 <canvas id="gameCanvas"></canvas>
 
 <button id="connectBluetooth">連線 micro:bit (藍牙)</button>
-<button id="pauseBtn">⏸</button>
 <button id="toggleSettings">⚙️</button>
+<button id="menuBtn">≡</button>
 
 <div id="volumeBar"><div id="volumeFill"></div></div>
 
+<!-- 設定面板 -->
 <div id="controls">
     <h3>虛擬美元: <span id="dollarsDisplay">0</span> $</h3>
     <h3>最高等級: <span id="highestLevelDisplay">1</span></h3>
@@ -80,6 +90,13 @@
     </div>
 </div>
 
+<!-- 遊戲選單 -->
+<div id="gameMenu">
+    <button id="pauseMenuBtn">暫停遊戲</button>
+    <button id="restartMenuBtn">重新開始</button>
+</div>
+
+<!-- 暫停文字 -->
 <div class="paused-text" id="pausedText">PAUSED</div>
 
 <script>
@@ -277,11 +294,7 @@ function draw() {
         ctx.font = 'bold 40px Arial'; ctx.strokeText('點擊螢幕重新開始', canvas.width/2, canvas.height/2 + 180); ctx.fillText('點擊螢幕重新開始', canvas.width/2, canvas.height/2 + 180);
     }
 
-    if (gamePaused) {
-        document.getElementById('pausedText').style.display = 'block';
-    } else {
-        document.getElementById('pausedText').style.display = 'none';
-    }
+    document.getElementById('pausedText').style.display = gamePaused ? 'block' : 'none';
 }
 
 function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
@@ -387,21 +400,40 @@ document.getElementById('difficultySelect').addEventListener('change', e => {
 document.getElementById('difficultyMode').textContent = difficultyModes[pipeGap];
 document.getElementById('pipeGapValue').textContent = pipeGap;
 
-// ==================== 設定面板切換 & 暫停 ====================
+// ==================== 設定面板 & 遊戲選單 ====================
 const controlsPanel = document.getElementById('controls');
 const toggleBtn = document.getElementById('toggleSettings');
-const pauseBtn = document.getElementById('pauseBtn');
+const menuBtn = document.getElementById('menuBtn');
+const gameMenu = document.getElementById('gameMenu');
+const pauseMenuBtn = document.getElementById('pauseMenuBtn');
+const restartMenuBtn = document.getElementById('restartMenuBtn');
 const pausedText = document.getElementById('pausedText');
 
-toggleBtn.addEventListener('click', () => {
-    controlsPanel.classList.toggle('show');
+toggleBtn.addEventListener('click', () => controlsPanel.classList.toggle('show'));
+
+menuBtn.addEventListener('click', () => {
+    gameMenu.style.display = gameMenu.style.display === 'block' ? 'none' : 'block';
 });
 
-pauseBtn.addEventListener('click', () => {
+pauseMenuBtn.addEventListener('click', () => {
     gamePaused = !gamePaused;
     pausedText.style.display = gamePaused ? 'block' : 'none';
+    gameMenu.style.display = 'none';
 });
 
+restartMenuBtn.addEventListener('click', () => {
+    resetGame(true);
+    gameMenu.style.display = 'none';
+});
+
+// 點擊畫面其他地方關閉選單
+document.addEventListener('click', (e) => {
+    if (!menuBtn.contains(e.target) && !gameMenu.contains(e.target)) {
+        gameMenu.style.display = 'none';
+    }
+});
+
+// 其他控制
 document.getElementById('jumpThreshold').addEventListener('input', () => {
     jumpThreshold = parseInt(document.getElementById('jumpThreshold').value);
     document.getElementById('jumpThresholdValue').textContent = jumpThreshold;
